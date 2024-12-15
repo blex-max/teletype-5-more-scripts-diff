@@ -1,0 +1,141 @@
+diff --git a/.gitignore b/.gitignore
+index c86fc4e..4c860b5 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -55,3 +55,4 @@ __pycache__/
+ /docs/cheatsheet/*
+ !/docs/cheatsheet/cs-common.tex
+ /docs/testServe/
++compile_commands.json
+diff --git a/module/edit_mode.c b/module/edit_mode.c
+index 3a3294c..01f52dc 100644
+--- a/module/edit_mode.c
++++ b/module/edit_mode.c
+@@ -402,8 +402,12 @@ uint8_t screen_refresh_edit() {
+ 
+     if (dirty & D_INPUT) {
+         bool muted = false;
+-        char prefix = script + '1';
+-        if (script == METRO_SCRIPT) {
++        char prefix = '1';  // init to 1 for no reason
++        if (script <= 8) { prefix = script + '1'; }
++        else if (script >= 9 && script < REGULAR_SCRIPT_COUNT) {
++            prefix = (script - 9) + 'A';
++        }
++        else if (script == METRO_SCRIPT) {
+             prefix = 'M';
+             muted = !scene_state.variables.m_act;
+         }
+diff --git a/module/flash.h b/module/flash.h
+index b81a990..5fefd07 100644
+--- a/module/flash.h
++++ b/module/flash.h
+@@ -7,7 +7,11 @@
+ #include "line_editor.h"
+ #include "teletype.h"
+ 
+-#define SCENE_SLOTS 32
++// for preset indexing to work, must be power of 2
++#define SCENE_SLOTS 16
++// number of bits needed to index SCENE_SLOTS slots
++#define SCENE_BITS (32 - __builtin_clz(SCENE_SLOTS - 1))
++
+ #define BUTTON_STATE_SIZE (GRID_BUTTON_COUNT >> 3)
+ 
+ typedef struct {
+diff --git a/module/help_mode.c b/module/help_mode.c
+index f5d328b..0cc535c 100644
+--- a/module/help_mode.c
++++ b/module/help_mode.c
+@@ -1692,9 +1692,7 @@ bool text_search_forward(search_state_t* state, const char* needle,
+ bool text_search_reverse(search_state_t* state, const char* needle,
+                          const char** haystack, int haystack_len) {
+     const int needle_len = strlen(needle);
+-    if (state->line >= haystack_len) {
+-        state->line = haystack_len - 1;
+-    }
++    if (state->line >= haystack_len) { state->line = haystack_len - 1; }
+     for (; state->line >= 0; state->line--) {
+         const int haystack_line_len = strlen(haystack[state->line]);
+         for (state->ch = haystack_line_len - needle_len; state->ch >= 0;
+diff --git a/module/main.c b/module/main.c
+index d8acde9..8bd5ea7 100644
+--- a/module/main.c
++++ b/module/main.c
+@@ -419,7 +419,9 @@ void handler_PollADC(int32_t data) {
+         ss_set_param(&scene_state, adc[1] << 2);
+     }
+     else if (mode == M_PRESET_R && !(grid_connected && grid_control_mode)) {
+-        uint8_t preset = adc[1] >> 6;
++        /* 12 bit adc, so shift by 12 minus N bits needed
++        to index all presets. + 1 for deadzone */
++        uint8_t preset = adc[1] >> (12 - SCENE_BITS + 1);
+         uint8_t deadzone = preset & 1;
+         preset >>= 1;
+         if (!deadzone || abs(preset - get_preset()) > 1)
+@@ -902,6 +904,13 @@ bool process_global_keys(uint8_t k, uint8_t m, bool is_held_key) {
+         run_script(&scene_state, INIT_SCRIPT);
+         return true;
+     }
++    // shift-<F1> through <F6>: run scripts (A-F)
++    else if (mod_only_shift(m) && k >= HID_F1 && k <= HID_F6) {
++        // with the new script number constants, I *think*
++        // + 8 will index correctly
++        run_script(&scene_state, k - HID_F1 + 8);
++        return true;
++    }
+     // alt-<F1> through alt-<F8>: edit corresponding script
+     else if (mod_only_alt(m) && k >= HID_F1 && k <= HID_F8) {
+         set_edit_mode_script(k - HID_F1);
+@@ -920,6 +929,12 @@ bool process_global_keys(uint8_t k, uint8_t m, bool is_held_key) {
+         set_mode(M_EDIT);
+         return true;
+     }
++    // alt-shift-<F1> through shift-alt-<F6>: edit scripts (A-F)
++    else if (mod_only_shift_alt(m) && k >= HID_F1 && k <= HID_F6) {
++        set_edit_mode_script(k - HID_F1 + 8);
++        set_mode(M_EDIT);
++        return true;
++    }
+     // ctrl-<F1> through ctrl-<F8> mute triggers
+     else if (mod_only_ctrl(m) && k >= HID_F1 && k <= HID_F8) {
+         bool muted = ss_get_mute(&scene_state, (k - HID_F1));
+diff --git a/src/scene_serialization.c b/src/scene_serialization.c
+index 265e08a..784d27c 100644
+--- a/src/scene_serialization.c
++++ b/src/scene_serialization.c
+@@ -51,8 +51,8 @@ void serialize_scene(tt_serializer_t* stream, scene_state_t* scene,
+             stream->write_char(stream->data, 'M');
+         else if (s == INIT_SCRIPT)
+             stream->write_char(stream->data, 'I');
+-        else
+-            stream->write_char(stream->data, s + 49);
++        else if (s < 9) { stream->write_char(stream->data, s + '1'); }
++        else { stream->write_char(stream->data, (s - 9) + 'A'); }
+ 
+         for (int l = 0; l < ss_get_script_len(scene, s); l++) {
+             stream->write_char(stream->data, '\n');
+@@ -206,7 +206,8 @@ void deserialize_scene(tt_deserializer_t* stream, scene_state_t* scene,
+                 s2 = STATE_GRID;
+             }
+             else {
+-                script = c - 49;
++                if (c >= '1' && c <= '9') { script = c - '1'; }
++                else { script = (c - 'A') + 9; }
+                 if (script < 0 || script >= EDITABLE_SCRIPT_COUNT) {
+                     script = NO_SCRIPT;
+                 }
+diff --git a/src/script.h b/src/script.h
+index 69491d9..04ead6c 100644
+--- a/src/script.h
++++ b/src/script.h
+@@ -1,7 +1,8 @@
+ #ifndef _SCRIPT_H_
+ #define _SCRIPT_H_
+ 
+-#define REGULAR_SCRIPT_COUNT 8
++// standard scripts 1-8, library scripts A-F
++#define REGULAR_SCRIPT_COUNT 14
+ 
+ #define METRO_SCRIPT REGULAR_SCRIPT_COUNT
+ #define INIT_SCRIPT (METRO_SCRIPT + 1)
