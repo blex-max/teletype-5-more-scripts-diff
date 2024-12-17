@@ -213,7 +213,7 @@ index 422c513..0cc535c 100644
          const int haystack_line_len = strlen(haystack[state->line]);
          for (state->ch = haystack_line_len - needle_len; state->ch >= 0;
 diff --git a/module/main.c b/module/main.c
-index d8acde9..233194c 100644
+index d8acde9..ee02db8 100644
 --- a/module/main.c
 +++ b/module/main.c
 @@ -419,7 +419,9 @@ void handler_PollADC(int32_t data) {
@@ -223,7 +223,7 @@ index d8acde9..233194c 100644
 -        uint8_t preset = adc[1] >> 6;
 +        /* 12 bit adc, so shift by 12 minus N bits needed
 +        to index all presets. - 1 for deadzone */
-+        uint8_t preset = adc[1] >> (11 - SCENE_BITS));
++        uint8_t preset = adc[1] >> (11 - SCENE_BITS);
          uint8_t deadzone = preset & 1;
          preset >>= 1;
          if (!deadzone || abs(preset - get_preset()) > 1)
