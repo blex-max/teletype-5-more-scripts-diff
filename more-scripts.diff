@@ -96,10 +96,10 @@ index 2c4577d..55f39dd 100644
 +          path: release
 +          name: teletype
 diff --git a/.gitignore b/.gitignore
-index 22903d0..3d3261b 100644
+index 22903d0..06f0a44 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -50,8 +50,10 @@ __pycache__/
+@@ -50,8 +50,11 @@ __pycache__/
  /simulator/tt
  /module/gitversion.c
  /tests/tests
@@ -112,6 +112,7 @@ index 22903d0..3d3261b 100644
  /docs/testServe/
 +compile_commands.json
 +patch.diff
++.clangd
 diff --git a/CHANGELOG.md b/CHANGELOG.md
 index f62371b..b4981cf 100644
 --- a/CHANGELOG.md
@@ -213,7 +214,7 @@ index 422c513..0cc535c 100644
          const int haystack_line_len = strlen(haystack[state->line]);
          for (state->ch = haystack_line_len - needle_len; state->ch >= 0;
 diff --git a/module/main.c b/module/main.c
-index d8acde9..ee02db8 100644
+index d8acde9..b8b11f4 100644
 --- a/module/main.c
 +++ b/module/main.c
 @@ -419,7 +419,9 @@ void handler_PollADC(int32_t data) {
@@ -231,7 +232,7 @@ index d8acde9..ee02db8 100644
          run_script(&scene_state, INIT_SCRIPT);
          return true;
      }
-+    // shift-<F1> through <F6>: run scripts (A-F)
++    // shift-<F1> through <F6>: run scripts (9-E)
 +    else if (mod_only_shift(m) && k >= HID_F1 && k <= HID_F6) {
 +        // with the new script number constants, I *think*
 +        // + 8 will index correctly
@@ -245,7 +246,7 @@ index d8acde9..ee02db8 100644
          set_mode(M_EDIT);
          return true;
      }
-+    // alt-shift-<F1> through shift-alt-<F6>: edit scripts (A-F)
++    // alt-shift-<F1> through shift-alt-<F6>: edit scripts (9-E)
 +    else if (mod_only_shift_alt(m) && k >= HID_F1 && k <= HID_F6) {
 +        set_edit_mode_script(k - HID_F1 + 8);
 +        set_mode(M_EDIT);
@@ -255,7 +256,7 @@ index d8acde9..ee02db8 100644
      else if (mod_only_ctrl(m) && k >= HID_F1 && k <= HID_F8) {
          bool muted = ss_get_mute(&scene_state, (k - HID_F1));
 diff --git a/src/scene_serialization.c b/src/scene_serialization.c
-index 265e08a..07770da 100644
+index 265e08a..784d27c 100644
 --- a/src/scene_serialization.c
 +++ b/src/scene_serialization.c
 @@ -51,8 +51,8 @@ void serialize_scene(tt_serializer_t* stream, scene_state_t* scene,
@@ -264,8 +265,8 @@ index 265e08a..07770da 100644
              stream->write_char(stream->data, 'I');
 -        else
 -            stream->write_char(stream->data, s + 49);
-+        else if (s < 8) { stream->write_char(stream->data, s + '1'); }
-+        else { stream->write_char(stream->data, (s - 8) + 'A'); }
++        else if (s < 9) { stream->write_char(stream->data, s + '1'); }
++        else { stream->write_char(stream->data, (s - 9) + 'A'); }
  
          for (int l = 0; l < ss_get_script_len(scene, s); l++) {
              stream->write_char(stream->data, '\n');
